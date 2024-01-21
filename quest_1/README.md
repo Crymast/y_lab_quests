@@ -26,12 +26,12 @@
 
 Создание баз, запустить последовательно:
 
-`alembic revision --autogenerate -m "Database creation"`
+`alembic revision --autogenerate -m "Database init"`
 
 Номер в конце подставить из сформированного файла в
 [migration/versions](migration%2Fversions)
 
-`alembic upgrade 531b18ff937b`
+`alembic upgrade head`
 
 ---
 

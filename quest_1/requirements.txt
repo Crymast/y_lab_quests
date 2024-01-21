@@ -1,6 +1,7 @@
 fastapi[all]~=0.109.0
 python-dotenv~=1.0.0
 sqlalchemy~=2.0.25
-psycopg2
-alembic
+asyncpg
+alembic~=1.13.1
 pydantic~=2.5.3
+uvicorn~=0.26.0
