@@ -18,17 +18,15 @@
 
 `pip install -r requirements.txt`
 
-Запуск приложения:
-
-`uvicorn main:app --reload`
-
 ---
 
 Создание баз, запустить последовательно:
 
+Создать каталог
+[migration/versions](migration%2Fversions)
+
 `alembic revision --autogenerate -m "Database init"`
 
-Номер в конце подставить из сформированного файла в
 [migration/versions](migration%2Fversions)
 
 `alembic upgrade head`

@@ -1,0 +1,3 @@
+migration/versions
+.env
+venv
