@@ -7,7 +7,8 @@ from sqlalchemy import select, delete
 from sqlalchemy import update
 from models.models import metadata, menu, submenu, dish
 
-from models.schemas import MenuCreate, MenuResponse, SubmenuCreate, SubmenuResponse, DishCreate, DishResponse
+from models.schemas import MenuCreate, MenuResponse, SubmenuCreate, SubmenuResponse, DishCreate, DishResponse, \
+    MenuUpdate
 from sqlalchemy import func
 
 from database import get_async_session
@@ -15,7 +16,8 @@ from database import get_async_session
 router = APIRouter(prefix='/api/v1')
 
 
-@router.get("/test")
+# Menu CRUD Operations
+@router.get("/menus/", response_model=list[MenuResponse])
 async def get_menu(session: AsyncSession = Depends(get_async_session)):
     stmt = select(
         menu.c.menu_uuid,
@@ -25,64 +27,65 @@ async def get_menu(session: AsyncSession = Depends(get_async_session)):
     result = await session.execute(stmt)
     menu_list = result.fetchall()
 
-    test_uuid = uuid.UUID("399b2aed-864f-4b57-bbfd-5272b7aa8b7d")
-    test_stmt = select(submenu).where(menu.c.menu_uuid==submenu.c.menu_uuid)
-    test_result = await session.execute(test_stmt)
-
     async def submenus_count(menu_uuid):
+        dishes_submenus_count = 0
         stmt_def_count = select(submenu).where(menu_uuid==submenu.c.menu_uuid)
         result_def_count = await session.execute(stmt_def_count)
-        # print(submenu.c.submenu_uuid)
-        return len(result_def_count.fetchall())
+        result_def_count_fetchall = result_def_count.fetchall()
+        for i in result_def_count_fetchall:
+            stmt_def_count_dish = select(dish).where(i[0]==dish.c.submenu_uuid)
+            result_def_count_dish = await session.execute(stmt_def_count_dish)
+            result_def_count_dish_fetchall = result_def_count_dish.fetchall()
+            dishes_submenus_count += len(result_def_count_dish_fetchall)
+        return len(result_def_count_fetchall), dishes_submenus_count
+
+    result = []
+
+    for m in menu_list:
+        submenus_count_res, dishes_count_res = await submenus_count(m.menu_uuid)
+        result.append(
+            {
+                'id': m.menu_uuid,
+                'title': m.title,
+                'description': m.description,
+                'submenus_count': submenus_count_res,
+                'dishes_count': dishes_count_res
+            }
+        )
+    return result
 
 
-    return [{
-        'id': m.menu_uuid,
-        'title': m.title,
-        'description': m.description,
-        'submenus_count': await submenus_count(m.menu_uuid),
-        'dishes_count': 0
-    } for m in menu_list]
-
-
-# Menu CRUD Operations
-@router.get("/menus/", response_model=list[MenuResponse])
-async def get_menus(session: AsyncSession = Depends(get_async_session)):
-    subq = select([
-        submenu.c.menu_uuid,
-        func.count(submenu.c.submenu_uuid.distinct()).label('submenus_count'),
-        func.count(dish.c.dish_uuid.distinct()).label('dishes_count')
-    ]).select_from(submenu.outerjoin(dish, submenu.c.submenu_uuid == dish.c.submenu_uuid)
-                   ).group_by(submenu.c.menu_uuid
-                              ).subquery()
-
-    stmt = select([
-        menu.c.menu_uuid,
-        menu.c.title,
-        menu.c.description,
-        subq.c.submenus_count,
-        subq.c.dishes_count
-    ]).select_from(menu.join(subq, menu.c.menu_uuid == subq.c.menu_uuid))
-
-    result = await session.execute(stmt)
-    menu_list = result.fetchall()
-    return [{
-        'id': m.menu_uuid,
-        'title': m.title,
-        'description': m.description,
-        'submenus_count': m.submenus_count if m.submenus_count else 0,  # Ensure a default value if None
-        'dishes_count': m.dishes_count if m.dishes_count else 0  # Ensure a default value if None
-    } for m in menu_list]
-
-
-@router.get("/menus/{menu_id}", response_model=MenuResponse)
+@router.get("/menus/{menu_id}")
 async def get_menu(menu_id: uuid.UUID, session: AsyncSession = Depends(get_async_session)):
-    stmt = select([menu]).where(menu.c.menu_uuid == menu_id)
+    stmt = select(menu).where(menu.c.menu_uuid == menu_id)
     result = await session.execute(stmt)
-    menu_item = result.fetchone()
+    menu_item = result.fetchall()
     if not menu_item:
-        raise HTTPException(status_code=404, detail="Menu not found")
-    return menu_item
+        raise HTTPException(status_code=404,
+                            detail={
+                                "detail": "menu not found"
+                            })
+
+
+    async def submenus_count(menu_uuid):
+        dishes_submenus_count = 0
+        stmt_def_count = select(submenu).where(menu_uuid==submenu.c.menu_uuid)
+        result_def_count = await session.execute(stmt_def_count)
+        result_def_count_fetchall = result_def_count.fetchall()
+        for i in result_def_count_fetchall:
+            stmt_def_count_dish = select(dish).where(i[0]==dish.c.submenu_uuid)
+            result_def_count_dish = await session.execute(stmt_def_count_dish)
+            result_def_count_dish_fetchall = result_def_count_dish.fetchall()
+            dishes_submenus_count += len(result_def_count_dish_fetchall)
+        return len(result_def_count_fetchall), dishes_submenus_count
+    a, b = await submenus_count(menu_item[0][0])
+    return {
+                'id': menu_item[0][0],
+                'title': menu_item[0][1],
+                'description': menu_item[0][2],
+                'submenus_count': a,
+                'dishes_count': b
+            }
 
 
 @router.post("/menus/", response_model=MenuResponse, status_code=201)
@@ -98,6 +101,46 @@ async def create_menu(menu_data: MenuCreate, session: AsyncSession = Depends(get
         "dishes_count": 0
     }
 
+
+@router.patch("/menus/{menu_id}")
+async def update_menu(menu_id: uuid.UUID, menu_data: MenuUpdate, session: AsyncSession = Depends(get_async_session)):
+    stmt = (
+        update(menu)
+        .where(menu.c.menu_uuid == menu_id)
+        .values(**menu_data.dict(exclude_unset=True))
+        .returning(menu)
+    )
+    result = await session.execute(stmt)
+    updated_menu = result.fetchone()
+    await session.commit()
+    if not updated_menu:
+        raise HTTPException(status_code=404,
+                            detail={
+                                "detail": "menu not found"
+                            })
+
+    async def submenus_count(menu_uuid):
+        dishes_submenus_count = 0
+        stmt_def_count = select(submenu).where(menu_uuid==submenu.c.menu_uuid)
+        result_def_count = await session.execute(stmt_def_count)
+        result_def_count_fetchall = result_def_count.fetchall()
+        for i in result_def_count_fetchall:
+            stmt_def_count_dish = select(dish).where(i[0]==dish.c.submenu_uuid)
+            result_def_count_dish = await session.execute(stmt_def_count_dish)
+            result_def_count_dish_fetchall = result_def_count_dish.fetchall()
+            dishes_submenus_count += len(result_def_count_dish_fetchall)
+        return len(result_def_count_fetchall), dishes_submenus_count
+    a, b = await submenus_count(updated_menu[0])
+    res = {
+    "id": updated_menu[0],
+    "title": updated_menu[1],
+    "description": updated_menu[2],
+    "submenus_count": a,
+    "dishes_count": b
+    }
+    return res
+
+
 @router.delete("/menus/{menu_id}")
 async def delete_menu(menu_id: str, session: AsyncSession = Depends(get_async_session)):
     query = delete(menu).where(menu.c.menu_uuid == menu_id)
@@ -107,6 +150,7 @@ async def delete_menu(menu_id: str, session: AsyncSession = Depends(get_async_se
         "status": True,
         "message": "The menu has been deleted"
     }
+
 
 # Submenu CRUD Operations
 @router.get("/submenus/", response_model=list[SubmenuResponse])
