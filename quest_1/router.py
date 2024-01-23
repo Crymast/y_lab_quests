@@ -153,25 +153,33 @@ async def delete_menu(menu_id: str, session: AsyncSession = Depends(get_async_se
 
 
 # Submenu CRUD Operations
-@router.get("/submenus/", response_model=list[SubmenuResponse])
-async def get_submenus(session: AsyncSession = Depends(get_async_session)):
-    # Join submenu with dish, group by submenu fields, and count dish
-    stmt = select([
+@router.get("/menus/{menu_id}/submenus")
+async def get_submenus(menu_id: uuid.UUID, session: AsyncSession = Depends(get_async_session)):
+    stmt = select(
         submenu.c.submenu_uuid,
         submenu.c.title,
-        submenu.c.description,
-        func.count(dish.c.dish_uuid).label('dishes_count')
-    ]).select_from(submenu.outerjoin(dish)).group_by(submenu.c.submenu_uuid, submenu.c.title, submenu.c.description)
+        submenu.c.description
+    )
     result = await session.execute(stmt)
     submenu_list = result.fetchall()
-    return [{
-        'id': s.submenu_uuid,
-        'title': s.title,
-        'description': s.description,
-        'dishes_count': s.dishes_count
-    } for s in submenu_list]
 
-@router.post("/submenus/", response_model=SubmenuResponse)
+    async def submenus_count(submenu_uuid):
+        stmt_def_count = select(dish).where(submenu_uuid==dish.c.submenu_uuid)
+        result_def_count = await session.execute(stmt_def_count)
+        result_def_count_fetchall = result_def_count.fetchall()
+        return len(result_def_count_fetchall)
+
+    count_dish_for_submenu = await submenus_count(submenu_list[0][0])
+    print()
+    return 'hello'
+    # return [{
+    #     'id': s.submenu_uuid,
+    #     'title': s.title,
+    #     'description': s.description,
+    #     'dishes_count': s.dishes_count
+    # } for s in submenu_list]
+
+@router.post("/menus/{menu_id}/submenus", response_model=SubmenuResponse)
 async def create_submenu(submenu_data: SubmenuCreate, session: AsyncSession = Depends(get_async_session)):
     new_submenu = submenu.insert().values(**submenu_data.dict())
     result = await session.execute(new_submenu)
