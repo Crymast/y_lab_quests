@@ -15,6 +15,36 @@ from database import get_async_session
 router = APIRouter(prefix='/api/v1')
 
 
+@router.get("/test")
+async def get_menu(session: AsyncSession = Depends(get_async_session)):
+    stmt = select(
+        menu.c.menu_uuid,
+        menu.c.title,
+        menu.c.description
+    )
+    result = await session.execute(stmt)
+    menu_list = result.fetchall()
+
+    test_uuid = uuid.UUID("399b2aed-864f-4b57-bbfd-5272b7aa8b7d")
+    test_stmt = select(submenu).where(menu.c.menu_uuid==submenu.c.menu_uuid)
+    test_result = await session.execute(test_stmt)
+
+    async def submenus_count(menu_uuid):
+        stmt_def_count = select(submenu).where(menu_uuid==submenu.c.menu_uuid)
+        result_def_count = await session.execute(stmt_def_count)
+        # print(submenu.c.submenu_uuid)
+        return len(result_def_count.fetchall())
+
+
+    return [{
+        'id': m.menu_uuid,
+        'title': m.title,
+        'description': m.description,
+        'submenus_count': await submenus_count(m.menu_uuid),
+        'dishes_count': 0
+    } for m in menu_list]
+
+
 # Menu CRUD Operations
 @router.get("/menus/", response_model=list[MenuResponse])
 async def get_menus(session: AsyncSession = Depends(get_async_session)):
@@ -61,7 +91,12 @@ async def create_menu(menu_data: MenuCreate, session: AsyncSession = Depends(get
     result = await session.execute(new_menu)
     await session.commit()
     menu_id = result.inserted_primary_key[0]
-    return {**menu_data.model_dump(), "id": menu_id, "submenus_count": 0, "dishes_count": 0}
+    return {
+        **menu_data.model_dump(),
+        "id": menu_id,
+        "submenus_count": 0,
+        "dishes_count": 0
+    }
 
 @router.delete("/menus/{menu_id}")
 async def delete_menu(menu_id: str, session: AsyncSession = Depends(get_async_session)):
